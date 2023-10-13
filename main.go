@@ -9,6 +9,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/fatih/color"
 )
@@ -19,11 +20,14 @@ const (
 )
 
 type message struct {
-	Timestamp float64  `json:"ts"`
-	Message   string   `json:"msg"`
-	Pod       string   `json:"pod"`
-	Pods      []string `json:"pods"`
-	Caller    string   `json:"caller"`
+	Timestamp float64 `json:"ts"`
+	Message   string  `json:"msg"`
+	Pod       struct {
+		Name      string `json:"name"`
+		Namespace string `json:"namespace"`
+	} `json:"pod"`
+	Pods   []string `json:"pods"`
+	Caller string   `json:"caller"`
 }
 
 func main() {
@@ -54,12 +58,14 @@ func main() {
 		var msg message
 		json.Unmarshal([]byte(line), &msg)
 
+		log.Println(msg.Pod, truncate(msg.Message, 100))
+
 		if seenFirstPodMessage && msg.Message == plegRelist {
 			msgs = append(msgs, msg)
 			continue
 		}
 
-		if msg.Pod == pod {
+		if strings.HasPrefix(msg.Pod.Name, pod) {
 			if stopAfterDeletion && msg.Message == msgContainerKilled {
 				break
 			}
@@ -108,33 +114,39 @@ func main() {
 			subsystem = color.New(color.Bold, color.FgYellow).SprintFunc()("PROBE")
 		}
 
-		diff := 0
+		diff := time.Duration(0)
+		dv := 0
 		if i > 0 {
-			diff = int(msg.Timestamp - msgs[i-1].Timestamp)
+			diff = dur(msg.Timestamp - msgs[i-1].Timestamp)
+			dv = int(msg.Timestamp - msgs[i-1].Timestamp)
 		}
 
-		diffStr := fmt.Sprint(diff)
-		if diff > 10 {
-			diffStr = color.New(color.FgYellow).SprintFunc()(diff)
+		diffStr := fmt.Sprintf("%-9s", diff)
+		if dv > 10 {
+			diffStr = color.New(color.FgYellow).Sprintf("%-9s", diff)
 		}
-		if diff > 30 {
-			diffStr = color.New(color.Bold, color.FgYellow).SprintFunc()(diff)
+		if dv > 30 {
+			diffStr = color.New(color.Bold, color.FgYellow).Sprintf("%-9s", diff)
 		}
-		if diff > 50 {
-			diffStr = color.New(color.FgHiYellow).SprintFunc()(diff)
+		if dv > 50 {
+			diffStr = color.New(color.FgHiYellow).Sprintf("%-9s", diff)
 		}
-		if diff > 100 {
-			diffStr = color.New(color.Bold, color.FgHiYellow).SprintFunc()(diff)
+		if dv > 100 {
+			diffStr = color.New(color.Bold, color.FgHiYellow).Sprintf("%-9s", diff)
 		}
-		if diff > 300 {
-			diffStr = color.New(color.FgRed).SprintFunc()(diff)
+		if dv > 300 {
+			diffStr = color.New(color.FgRed).Sprintf("%-9s", diff)
 		}
-		if diff > 500 {
-			diffStr = color.New(color.Bold, color.FgRed).SprintFunc()(diff)
+		if dv > 500 {
+			diffStr = color.New(color.Bold, color.FgRed).Sprintf("%-9s", diff)
 		}
 
-		fmt.Printf("%d\t%s\t%s\t%s\n", int(msg.Timestamp-start), diffStr, subsystem, truncate(msg.Message, 90))
+		fmt.Printf("%-9s\t%s\t%s\t%s\n", dur(msg.Timestamp-start), diffStr, subsystem, truncate(msg.Message, 90))
 	}
+}
+
+func dur(f float64) time.Duration {
+	return time.Duration(float64(time.Millisecond) * f).Round(time.Microsecond * 100)
 }
 
 func truncate(msg string, max int) string {
