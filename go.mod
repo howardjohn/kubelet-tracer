@@ -1,4 +1,4 @@
-module github.com/markusthoemmes/kubelet-tracer
+module github.com/howardjohn/kubelet-tracer
 
 go 1.16
 
