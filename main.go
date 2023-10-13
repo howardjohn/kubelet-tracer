@@ -43,7 +43,7 @@ func main() {
 	}
 	fmt.Println("Pod: " + pod)
 
-	fmt.Println("ELAPSED\tDIFF\tSYSTEM\tMESSAGE")
+	fmt.Println("ELAPSED\t\tDIFF\tSYSTEM\tMESSAGE")
 	start := 0.
 	last := 0.
 	consumeMessage := func(msg message) {
@@ -69,6 +69,10 @@ func main() {
 
 		diff := dur(msg.Timestamp - last)
 		dv := int(msg.Timestamp - last)
+		if last == 0 {
+			diff = time.Duration(0)
+			dv = 0
+		}
 		last = msg.Timestamp
 
 		diffStr := fmt.Sprintf("%-9s", diff)
@@ -96,6 +100,7 @@ func main() {
 
 	var seenFirstPodMessage bool
 	scanner := bufio.NewScanner(os.Stdin)
+	var end time.Time
 	for scanner.Scan() {
 		line := scanner.Text()
 		start := strings.Index(line, "{")
@@ -106,6 +111,7 @@ func main() {
 
 		var msg message
 		json.Unmarshal([]byte(line), &msg)
+		end = time.UnixMicro(int64(msg.Timestamp * 1000))
 
 		if seenFirstPodMessage && msg.Message == plegRelist {
 			consumeMessage(msg)
@@ -130,6 +136,8 @@ func main() {
 			}
 		}
 	}
+	fmt.Printf("Start: %v\n", time.UnixMicro(int64(start*1000)))
+	fmt.Printf("End  : %v\n", end)
 }
 
 func dur(f float64) time.Duration {

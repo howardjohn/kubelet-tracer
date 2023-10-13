@@ -17,3 +17,7 @@ This script builds a node image from a fresh Kubernetes source (located at `~/go
 ### `analyze_kind.sh`
 
 This script takes the pod you want to analyze as an argument (in the form of `$ns/$name`) and then takes care of exporting the respective logs from `kind`, piping them into `kubelet-tracer` and cleaning up after itself.
+
+### Streaming
+
+docker exec verbose-control-plane journalctl -u kubelet -n100000 -f -o cat | kubelet-tracer --stop-after-deletion --pod startup-test-ygpvpxrv
