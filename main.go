@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"sort"
 	"strings"
 	"time"
 
@@ -44,60 +43,14 @@ func main() {
 	}
 	fmt.Println("Pod: " + pod)
 
-	var msgs []message
-	var seenFirstPodMessage bool
-	scanner := bufio.NewScanner(os.Stdin)
-	for scanner.Scan() {
-		line := scanner.Text()
-		start := strings.Index(line, "{")
-		if start == -1 {
-			continue
-		}
-		line = line[start:]
-
-		var msg message
-		json.Unmarshal([]byte(line), &msg)
-
-		log.Println(msg.Pod, truncate(msg.Message, 100))
-
-		if seenFirstPodMessage && msg.Message == plegRelist {
-			msgs = append(msgs, msg)
-			continue
-		}
-
-		if strings.HasPrefix(msg.Pod.Name, pod) {
-			if stopAfterDeletion && msg.Message == msgContainerKilled {
-				break
-			}
-
-			seenFirstPodMessage = true
-			msgs = append(msgs, msg)
-			continue
-		}
-
-		for _, podName := range msg.Pods {
-			if podName == pod {
-				seenFirstPodMessage = true
-				msgs = append(msgs, msg)
-				break
-			}
-		}
-	}
-
-	if len(msgs) == 0 {
-		log.Fatalln("No messages found")
-	}
-
-	sort.Slice(msgs, func(i, j int) bool {
-		return msgs[i].Timestamp < msgs[j].Timestamp
-	})
-
-	fmt.Println()
-	fmt.Println("Logs:")
 	fmt.Println("ELAPSED\tDIFF\tSYSTEM\tMESSAGE")
+	start := 0.
+	last := 0.
+	consumeMessage := func(msg message) {
+		if start == 0 {
+			start = msg.Timestamp
+		}
 
-	start := msgs[0].Timestamp
-	for i, msg := range msgs {
 		// Figure out which subsystem the line belongs to.
 		subsystem := color.New(color.Bold).SprintFunc()("MISC")
 		if strings.HasPrefix(msg.Caller, "volumemanager/") || strings.HasPrefix(msg.Caller, "populator/") || strings.HasPrefix(msg.Caller, "reconciler/") || strings.HasPrefix(msg.Caller, "operationexecutor/") {
@@ -114,12 +67,9 @@ func main() {
 			subsystem = color.New(color.Bold, color.FgYellow).SprintFunc()("PROBE")
 		}
 
-		diff := time.Duration(0)
-		dv := 0
-		if i > 0 {
-			diff = dur(msg.Timestamp - msgs[i-1].Timestamp)
-			dv = int(msg.Timestamp - msgs[i-1].Timestamp)
-		}
+		diff := dur(msg.Timestamp - last)
+		dv := int(msg.Timestamp - last)
+		last = msg.Timestamp
 
 		diffStr := fmt.Sprintf("%-9s", diff)
 		if dv > 10 {
@@ -142,6 +92,43 @@ func main() {
 		}
 
 		fmt.Printf("%-9s\t%s\t%s\t%s\n", dur(msg.Timestamp-start), diffStr, subsystem, truncate(msg.Message, 90))
+	}
+
+	var seenFirstPodMessage bool
+	scanner := bufio.NewScanner(os.Stdin)
+	for scanner.Scan() {
+		line := scanner.Text()
+		start := strings.Index(line, "{")
+		if start == -1 {
+			continue
+		}
+		line = line[start:]
+
+		var msg message
+		json.Unmarshal([]byte(line), &msg)
+
+		if seenFirstPodMessage && msg.Message == plegRelist {
+			consumeMessage(msg)
+			continue
+		}
+
+		if strings.HasPrefix(msg.Pod.Name, pod) {
+			if stopAfterDeletion && msg.Message == msgContainerKilled {
+				break
+			}
+
+			seenFirstPodMessage = true
+			consumeMessage(msg)
+			continue
+		}
+
+		for _, podName := range msg.Pods {
+			if podName == pod {
+				seenFirstPodMessage = true
+				consumeMessage(msg)
+				break
+			}
+		}
 	}
 }
 
